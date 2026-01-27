@@ -8,6 +8,7 @@ use std::fs;
 use std::path::PathBuf;
 
 mod ai;
+mod mail;
 
 #[derive(Debug, Clone, Serialize, Deserialize)]
 struct Tits {
