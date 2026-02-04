@@ -1,3 +1,4 @@
+use chrono::Local;
 use directories::ProjectDirs;
 use dotenvy::dotenv;
 use iced::widget::{button, column, container, scrollable, text};
@@ -14,12 +15,16 @@ mod mail;
 struct Tits {
     summary: String,
     last_updated: String,
+    previous_briefing: Option<String>,
+    previous_update: Option<String>,
+    update_time: Option<String>,
 }
 
 #[derive(Debug, Clone)]
 enum Message {
     RefreshPressed,
     SummaryGenerated(Result<String, String>),
+    PreviousBriefing,
 }
 
 impl Default for Tits {
@@ -29,7 +34,10 @@ impl Default for Tits {
                 "You have a quiet morning. \n\n\
                  There are no urgent blockers in your inbox. \n\n",
             ),
-            last_updated: String::from("Last updated: forever ago"),
+            last_updated: String::from("Last updated: Just now"),
+            previous_briefing: None,
+            previous_update: None,
+            update_time: None,
         }
     }
 }
@@ -40,21 +48,16 @@ impl Tits {
             Message::RefreshPressed => {
                 self.last_updated = String::from("Refreshing...");
                 self.summary = String::from("Reading inbox...");
+                self.previous_briefing = Some(self.summary.clone());
 
-                let fake_inbox = r#"Email 1: From Boss. Subject: Urgent presentation. Body: We need the slides by 2pm.
-    Email 2: From Amazon. Subject: Order Shipped. Body: Your socks are on the way.
-    Email 3: From David. Subject: Lunch? Body: Tacos at 12?
-    Email 4: From Jira. Subject: Ticket #994. Body: Update on the backend bug."#;
+                let now = Local::now();
+                let formatted = now.format("%b %-d, %-I:%M %p").to_string();
+                self.previous_update = self.update_time.take();
+                self.update_time = Some(formatted);
 
                 self.save();
 
-                Task::perform(
-                    ai::generate_response(format!(
-                        "Summarise these email and produce a briefing: {}",
-                        fake_inbox
-                    )),
-                    Message::SummaryGenerated,
-                )
+                Task::perform(refresh_inbox(), Message::SummaryGenerated)
             }
 
             Message::SummaryGenerated(result) => {
@@ -73,16 +76,35 @@ impl Tits {
 
                 Task::none()
             }
+
+            Message::PreviousBriefing => {
+                self.summary = self.previous_briefing.clone().unwrap_or_default();
+
+                let last = self
+                    .previous_update
+                    .clone()
+                    .unwrap_or_else(|| "Forever ago".to_string());
+                self.last_updated = format!("Last Updated at: {}", last);
+
+                self.save();
+
+                Task::none()
+            }
         }
     }
 
     fn view(&self) -> Element<Message> {
-        let content = column![
+        let mut content = column![
             text(&self.summary),
-            button("Refresh").on_press(Message::RefreshPressed)
+            button("Refresh").on_press(Message::RefreshPressed),
         ]
         .max_width(650)
         .spacing(20);
+
+        if self.previous_briefing.is_some() {
+            content =
+                content.push(button("Show Previous Briefing").on_press(Message::PreviousBriefing))
+        }
 
         container(scrollable(content))
             .width(Length::Fill)
@@ -123,6 +145,20 @@ impl Tits {
 
         Self::default()
     }
+}
+
+pub async fn refresh_inbox() -> Result<String, String> {
+    let emails = mail::fetch_emails().await?;
+    let formatted_emails = mail::email_formatter(emails);
+
+    if formatted_emails.is_empty() {
+        return Ok(String::new());
+    }
+
+    let response =
+        ai::generate_response(format!("Summarise these emails:\n{}", formatted_emails)).await?;
+
+    Ok(response)
 }
 
 pub fn main() -> iced::Result {

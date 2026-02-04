@@ -147,3 +147,22 @@ pub async fn fetch_emails() -> Result<Vec<Email>, String> {
 
     Ok(fetch_emails)
 }
+
+pub fn email_formatter(emails: Vec<Email>) -> String {
+    if emails.is_empty() {
+        return String::new();
+    }
+
+    let formatted_emails = emails
+        .iter()
+        .map(|email| {
+            format!(
+                "Subject: {}\nFrom: {}\nBody: {}\n",
+                email.subject, email.from, email.body
+            )
+        })
+        .collect::<Vec<String>>()
+        .join("-----------\n");
+
+    formatted_emails
+}
