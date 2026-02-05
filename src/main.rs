@@ -1,7 +1,7 @@
 use chrono::Local;
 use directories::ProjectDirs;
 use dotenvy::dotenv;
-use iced::widget::{button, column, container, scrollable, text};
+use iced::widget::{button, column, container, row, scrollable, text};
 use iced::{Element, Length, Task, Theme};
 use serde::{Deserialize, Serialize};
 use std::env;
@@ -12,12 +12,20 @@ mod ai;
 mod mail;
 
 #[derive(Debug, Clone, Serialize, Deserialize)]
+enum ActiveButton {
+    Previous,
+    Current,
+}
+
+#[derive(Debug, Clone, Serialize, Deserialize)]
 struct Tits {
     summary: String,
     last_updated: String,
     previous_briefing: Option<String>,
+    current_briefing: Option<String>,
     previous_update: Option<String>,
     update_time: Option<String>,
+    active: ActiveButton,
 }
 
 #[derive(Debug, Clone)]
@@ -25,6 +33,7 @@ enum Message {
     RefreshPressed,
     SummaryGenerated(Result<String, String>),
     PreviousBriefing,
+    CurrentBriefing,
 }
 
 impl Default for Tits {
@@ -36,8 +45,10 @@ impl Default for Tits {
             ),
             last_updated: String::from("Last updated: Just now"),
             previous_briefing: None,
+            current_briefing: None,
             previous_update: None,
             update_time: None,
+            active: ActiveButton::Current,
         }
     }
 }
@@ -46,14 +57,15 @@ impl Tits {
     fn update(&mut self, message: Message) -> Task<Message> {
         match message {
             Message::RefreshPressed => {
-                self.last_updated = String::from("Refreshing...");
-                self.summary = String::from("Reading inbox...");
                 self.previous_briefing = Some(self.summary.clone());
 
                 let now = Local::now();
                 let formatted = now.format("%b %-d, %-I:%M %p").to_string();
                 self.previous_update = self.update_time.take();
                 self.update_time = Some(formatted);
+
+                self.last_updated = String::from("Refreshing...");
+                self.summary = String::from("Reading inbox...");
 
                 self.save();
 
@@ -64,15 +76,18 @@ impl Tits {
                 match result {
                     Ok(text) => {
                         self.summary = text;
+                        self.current_briefing = Some(self.summary.clone());
                         self.last_updated = String::from("Updated: Just now");
-                        self.save();
                     }
                     Err(error) => {
                         self.summary = format!("Error: {}", error);
+                        self.current_briefing = Some(self.summary.clone());
                         self.last_updated = String::from("Error");
-                        self.save();
                     }
                 }
+
+                self.active = ActiveButton::Current;
+                self.save();
 
                 Task::none()
             }
@@ -86,6 +101,22 @@ impl Tits {
                     .unwrap_or_else(|| "Forever ago".to_string());
                 self.last_updated = format!("Last Updated at: {}", last);
 
+                self.active = ActiveButton::Previous;
+                self.save();
+
+                Task::none()
+            }
+
+            Message::CurrentBriefing => {
+                self.summary = self.current_briefing.clone().unwrap_or_default();
+
+                let last = self
+                    .update_time
+                    .clone()
+                    .unwrap_or_else(|| "Forever ago".to_string());
+                self.last_updated = format!("Last Updated at: {}", last);
+
+                self.active = ActiveButton::Current;
                 self.save();
 
                 Task::none()
@@ -94,17 +125,25 @@ impl Tits {
     }
 
     fn view(&self) -> Element<Message> {
+        let btn_previous = match (self.active.clone(), self.previous_briefing.is_some()) {
+            (ActiveButton::Previous, _) => button("<"),
+            (_, true) => button("<").on_press(Message::PreviousBriefing),
+            _ => button("<"),
+        };
+        let btn_next = match (self.active.clone(), self.current_briefing.is_some()) {
+            (ActiveButton::Current, _) => button(">"),
+            (_, true) => button(">").on_press(Message::CurrentBriefing),
+            _ => button(">"),
+        };
+
         let mut content = column![
             text(&self.summary),
+            text(&self.last_updated),
             button("Refresh").on_press(Message::RefreshPressed),
+            row![btn_previous, btn_next],
         ]
         .max_width(650)
         .spacing(20);
-
-        if self.previous_briefing.is_some() {
-            content =
-                content.push(button("Show Previous Briefing").on_press(Message::PreviousBriefing))
-        }
 
         container(scrollable(content))
             .width(Length::Fill)
@@ -155,8 +194,59 @@ pub async fn refresh_inbox() -> Result<String, String> {
         return Ok(String::new());
     }
 
-    let response =
-        ai::generate_response(format!("Summarise these emails:\n{}", formatted_emails)).await?;
+    let response = ai::generate_response(format!(
+        r#"<system_capability>
+    You are an elite Executive Assistant and Chief of Staff. Your goal is to synthesize high-volume information into calm, actionable intelligence. You value clarity, brevity, and narrative flow over lists and formatting.
+    </system_capability>
+
+    <strict_authority_protocol>
+    ### FORMATTING CONSTANTS - READ CAREFULLY
+    1.  **PLAIN TEXT ONLY**: You are STRICTLY FORBIDDEN from using Markdown.
+        -   NO bolding (**text**).
+        -   NO italics (*text*).
+        -   NO headers (###).
+        -   NO bullet points (-) or numbered lists (1.).
+    2.  **PARAGRAPHS**: Content must be delivered in smooth, readable paragraphs.
+    3.  **FAILURE CONDITION**: If the output contains a single asterisk or bullet point, the response is considered a failure.
+    </strict_authority_protocol>
+
+    <processing_logic>
+    Step 1: **FILTER**. Aggressively discard trivial emails (newsletters, receipts, notifications, "checking in" emails) unless they contain a direct blocker or urgent deadline.
+    Step 2: **EXTRACT**. Identify:
+        -   Upcoming meetings (Who, When, Context).
+        -   Direct questions asked of the user.
+        -   Urgent blockers or red flags.
+        -   Status updates on active projects.
+    Step 3: **SYNTHESIZE**. Draft a briefing using a calm, professional tone.
+        -   Start with "Good day, Apex.".
+        -   Group related items into paragraphs (e.g., Meeting context in para 1, Project blockers in para 2).
+        -   End with a strategic next step if applicable.
+    </processing_logic>
+
+    <few_shot_examples>
+    Input: [Raw Emails containing: 1. Newsletter from Substack, 2. Meeting reminder for ScyAI at 7pm, 3. Email from Bernhard about missing login screen, 4. WhatsApp group chatter about QR codes vs Roam, 5. SuperWhisper team update on landing page.]
+
+    Output:
+    Good day, Apex.
+
+    You have a meeting coming up in about 3.5 hours - ScyAI x UI/UX Sync at 7pm with Bernhard. Before that call, you should know that Bernhard flagged a missing login screen in the ScyAI Design group. They're implementing one-time passwords for first login, but users need to change their password immediately after. He's looking for that additional screen to be designed.
+
+    Also in your WhatsApp groups, someone from the Visualizations/Branding Co is asking about QR codes and whether you prefer communication through that chat or Roam. Julian pushed back hard on QR codes, but the original question about your preferred communication method is still hanging.
+
+    Your SuperWhisper team has been busy - they've got a new landing page ready for feedback. The conversation shows they've been iterating on animations and user experience, with some good discussion about making the demo less interactive during autoplay.
+
+    I'd prioritize prepping for the ScyAI meeting by reviewing that missing login screen requirement. The day looks manageable with just the one evening meeting.
+    </few_shot_examples>
+
+    <task>
+    Summarize the following raw emails into a morning briefing following the strict formatting protocols above.
+
+    EMAILS:
+    {}
+    </task>"#,
+        formatted_emails
+    ))
+    .await?;
 
     Ok(response)
 }
