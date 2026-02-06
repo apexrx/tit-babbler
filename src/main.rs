@@ -1,8 +1,10 @@
 use chrono::Local;
 use directories::ProjectDirs;
 use dotenvy::dotenv;
+use iced::font::{Family, Stretch, Style, Weight};
+use iced::widget::button::background;
 use iced::widget::{button, column, container, row, scrollable, text};
-use iced::{Element, Length, Task, Theme};
+use iced::{Element, Length, Padding, Task, Theme};
 use serde::{Deserialize, Serialize};
 use std::env;
 use std::fs;
@@ -10,6 +12,13 @@ use std::path::PathBuf;
 
 mod ai;
 mod mail;
+
+const BODY_FONT: iced::Font = iced::Font {
+    family: iced::font::Family::Name("Pretendard Variable"),
+    weight: iced::font::Weight::Normal,
+    stretch: iced::font::Stretch::Normal,
+    style: iced::font::Style::Normal,
+};
 
 #[derive(Debug, Clone, Serialize, Deserialize)]
 enum ActiveButton {
@@ -137,19 +146,48 @@ impl Tits {
         };
 
         let mut content = column![
-            text(&self.summary),
-            text(&self.last_updated),
-            button("Refresh").on_press(Message::RefreshPressed),
+            scrollable(
+                column![text(&self.summary).font(BODY_FONT)].padding(Padding {
+                    top: 80.0,
+                    right: 40.0,
+                    bottom: 40.0,
+                    left: 80.0,
+                })
+            )
+            .height(Length::Fill),
+            text(&self.last_updated)
+                .font(BODY_FONT)
+                .size(14)
+                .color(iced::Color::from_rgb8(200, 200, 200)),
+            button(
+                text("Refresh")
+                    .font(BODY_FONT)
+                    .size(12)
+                    .color(iced::Color::from_rgb8(156, 156, 156))
+            )
+            .on_press(Message::RefreshPressed)
+            .style(|_theme, _state| {
+                button::Style {
+                    background: Some(iced::Color::from_rgb8(30, 30, 30).into()),
+                    ..Default::default()
+                }
+            }),
             row![btn_previous, btn_next],
         ]
-        .max_width(650)
-        .spacing(20);
+        .max_width(800)
+        .spacing(20)
+        .align_x(iced::Alignment::Center);
 
-        container(scrollable(content))
+        container(content)
             .width(Length::Fill)
             .height(Length::Fill)
             .center_x(Length::Fill)
             .center_y(Length::Fill)
+            .padding(120)
+            .style(|_theme| container::Style {
+                background: Some(iced::Color::from_rgb8(30, 30, 30).into()),
+                ..Default::default()
+            })
             .into()
     }
 
@@ -211,7 +249,7 @@ pub async fn refresh_inbox() -> Result<String, String> {
     </strict_authority_protocol>
 
     <processing_logic>
-    Step 1: **FILTER**. Aggressively discard trivial emails (newsletters, receipts, notifications, "checking in" emails) unless they contain a direct blocker or urgent deadline.
+    Step 1: **FILTER**. Aggressively discard trivial emails (newsletters, receipts, notifications, "checking in" emails) unless they contain a direct blocker or urgent deadline - USERS DO NOT WANT SPAM IN THEIR BREIFING.
     Step 2: **EXTRACT**. Identify:
         -   Upcoming meetings (Who, When, Context).
         -   Direct questions asked of the user.
@@ -258,5 +296,9 @@ pub fn main() -> iced::Result {
     iced::application(Tits::load, Tits::update, Tits::view)
         .title(|_: &Tits| String::from("Tit-Babbler"))
         .theme(|_: &Tits| Theme::Dark)
+        .window(iced::window::Settings {
+            decorations: false,
+            ..Default::default()
+        })
         .run()
 }
