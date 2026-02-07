@@ -1,6 +1,6 @@
 [package]
-name = "tit-bbbler"
-version = "0.9.0"
+name = "tit-babbler"
+version = "0.9.5"
 edition = "2024"
 
 [dependencies]
@@ -19,3 +19,4 @@ webpki-roots = "1.0.5"
 tokio = "1.49.0"
 tokio-rustls = "0.26.4"
 futures = "0.3.31"
+image = "0.25.9"

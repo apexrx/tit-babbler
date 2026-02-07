@@ -4,7 +4,8 @@ use dotenvy::dotenv;
 use iced::font::{Family, Stretch, Style, Weight};
 use iced::widget::button::background;
 use iced::widget::{button, column, container, row, scrollable, text};
-use iced::{Element, Length, Padding, Task, Theme};
+use iced::{Border, Element, Length, Padding, Task, Theme};
+use image;
 use serde::{Deserialize, Serialize};
 use std::env;
 use std::fs;
@@ -160,7 +161,7 @@ impl Tits {
                 .size(14)
                 .color(iced::Color::from_rgb8(200, 200, 200)),
             button(
-                text("Refresh")
+                text("⭮ Refresh")
                     .font(BODY_FONT)
                     .size(12)
                     .color(iced::Color::from_rgb8(156, 156, 156))
@@ -172,10 +173,51 @@ impl Tits {
                     ..Default::default()
                 }
             }),
-            row![btn_previous, btn_next],
+            row![
+                btn_previous
+                    .style(|_theme, _state| {
+                        button::Style {
+                            border: Border {
+                                radius: iced::border::Radius {
+                                    top_left: 6.0,
+                                    top_right: 0.0,
+                                    bottom_left: 6.0,
+                                    bottom_right: 0.0,
+                                },
+                                width: 0.5,
+                                color: iced::Color::from_rgba(1.0, 1.0, 1.0, 0.1),
+                                ..Default::default()
+                            },
+                            background: Some(iced::Color::from_rgba(1.0, 1.0, 1.0, 0.05).into()),
+                            text_color: iced::Color::from_rgba(1.0, 1.0, 1.0, 0.5),
+                            ..Default::default()
+                        }
+                    })
+                    .padding(iced::Padding::from([4.0, 24.0])),
+                btn_next
+                    .style(|_theme, _state| {
+                        button::Style {
+                            border: Border {
+                                radius: iced::border::Radius {
+                                    top_left: 0.0,
+                                    top_right: 6.0,
+                                    bottom_left: 0.0,
+                                    bottom_right: 6.0,
+                                },
+                                width: 0.5,
+                                color: iced::Color::from_rgba(1.0, 1.0, 1.0, 0.1),
+                                ..Default::default()
+                            },
+                            background: Some(iced::Color::from_rgba(1.0, 1.0, 1.0, 0.05).into()),
+                            text_color: iced::Color::from_rgba(1.0, 1.0, 1.0, 0.5),
+                            ..Default::default()
+                        }
+                    })
+                    .padding(iced::Padding::from([4.0, 24.0]))
+            ]
         ]
         .max_width(800)
-        .spacing(20)
+        .spacing(10)
         .align_x(iced::Alignment::Center);
 
         container(content)
@@ -186,6 +228,10 @@ impl Tits {
             .padding(120)
             .style(|_theme| container::Style {
                 background: Some(iced::Color::from_rgb8(30, 30, 30).into()),
+                border: Border {
+                    radius: iced::border::Radius::from(6.0),
+                    ..Default::default()
+                },
                 ..Default::default()
             })
             .into()
@@ -289,6 +335,17 @@ pub async fn refresh_inbox() -> Result<String, String> {
     Ok(response)
 }
 
+fn load_icon() -> Option<iced::window::Icon> {
+    let bytes = include_bytes!("../assets/icon.png");
+
+    let image = image::load_from_memory(bytes).ok()?.to_rgba8();
+
+    let (width, height) = image.dimensions();
+    let rgba = image.into_raw();
+
+    iced::window::icon::from_rgba(rgba, width, height).ok()
+}
+
 pub fn main() -> iced::Result {
     dotenv().ok();
     println!("Key found!");
@@ -297,7 +354,9 @@ pub fn main() -> iced::Result {
         .title(|_: &Tits| String::from("Tit-Babbler"))
         .theme(|_: &Tits| Theme::Dark)
         .window(iced::window::Settings {
-            decorations: false,
+            decorations: true,
+            transparent: false,
+            icon: load_icon(),
             ..Default::default()
         })
         .run()
